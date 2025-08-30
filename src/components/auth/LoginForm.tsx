@@ -3,7 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface LoginFormProps {
   onToggleMode: () => void;
@@ -21,15 +22,52 @@ export const LoginForm = ({ onToggleMode, isLogin }: LoginFormProps) => {
     setLoading(true);
 
     try {
-      // TODO: Implement Supabase auth
-      toast({
-        title: isLogin ? "Login successful!" : "Registration successful!",
-        description: `Welcome${isLogin ? " back" : ""}!`,
-      });
-    } catch (error) {
+      if (isLogin) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: "Login successful!",
+          description: "Welcome back!",
+        });
+
+        // Force page reload to ensure clean state
+        window.location.href = '/';
+      } else {
+        const redirectUrl = `${window.location.origin}/`;
+        
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: redirectUrl
+          }
+        });
+
+        if (error) throw error;
+
+        if (data.user && !data.session) {
+          toast({
+            title: "Registration successful!",
+            description: "Please check your email to confirm your account.",
+          });
+        } else {
+          toast({
+            title: "Registration successful!",
+            description: "Welcome to SAB Trading!",
+          });
+          // Force page reload to ensure clean state
+          window.location.href = '/';
+        }
+      }
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Something went wrong. Please try again.",
+        description: error.message || "Something went wrong. Please try again.",
         variant: "destructive",
       });
     } finally {

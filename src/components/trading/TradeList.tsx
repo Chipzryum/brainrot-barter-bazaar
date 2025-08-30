@@ -2,18 +2,18 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { brainrots, rarityColors, formatPrice } from "@/lib/brainrots";
 import { Trash2, Eye, EyeOff } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface Trade {
   id: string;
-  userId: string;
-  userEmail: string;
-  offeringId: string;
-  wantingId: string;
-  isVisible: boolean;
-  createdAt: string;
+  user_id: string;
+  offering_item_id: string;
+  wanting_item_id: string;
+  is_visible: boolean;
+  created_at: string;
 }
 
 interface TradeListProps {
@@ -23,7 +23,7 @@ interface TradeListProps {
     rarity?: string;
   };
   refreshTrigger: number;
-  currentUserId?: string;
+  currentUserId: string;
 }
 
 export const TradeList = ({ filters, refreshTrigger, currentUserId }: TradeListProps) => {
@@ -31,68 +31,73 @@ export const TradeList = ({ filters, refreshTrigger, currentUserId }: TradeListP
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  // Mock data for now - replace with Supabase query
+  // Fetch trades from Supabase
   useEffect(() => {
     const fetchTrades = async () => {
       setLoading(true);
-      // TODO: Replace with actual Supabase query
-      const mockTrades: Trade[] = [
-        {
-          id: "1",
-          userId: "user1",
-          userEmail: "trader1@example.com",
-          offeringId: "1", // Noobini Pizzanini
-          wantingId: "16", // Cappuccino Assassino
-          isVisible: true,
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: "2",
-          userId: "user2",
-          userEmail: "trader2@example.com",
-          offeringId: "44", // Coco Elefanto
-          wantingId: "58", // La Vacca Staturno Saturnita
-          isVisible: true,
-          createdAt: new Date().toISOString()
+      try {
+        let query = supabase
+          .from('trades')
+          .select('*')
+          .eq('is_visible', true);
+
+        // Apply filters
+        if (filters.askingFor) {
+          query = query.eq('wanting_item_id', filters.askingFor);
         }
-      ];
-      
-      let filteredTrades = mockTrades.filter(trade => trade.isVisible);
-      
-      // Apply filters
-      if (filters.askingFor) {
-        filteredTrades = filteredTrades.filter(trade => trade.wantingId === filters.askingFor);
-      }
-      if (filters.lookingFor) {
-        filteredTrades = filteredTrades.filter(trade => trade.offeringId === filters.lookingFor);
-      }
-      if (filters.rarity) {
-        filteredTrades = filteredTrades.filter(trade => {
-          const offering = brainrots.find(b => b.id === trade.offeringId);
-          const wanting = brainrots.find(b => b.id === trade.wantingId);
-          return offering?.rarity === filters.rarity || wanting?.rarity === filters.rarity;
+        if (filters.lookingFor) {
+          query = query.eq('offering_item_id', filters.lookingFor);
+        }
+        
+        const { data, error } = await query
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        let filteredTrades = data || [];
+
+        // Apply rarity filter
+        if (filters.rarity) {
+          filteredTrades = filteredTrades.filter(trade => {
+            const offering = brainrots.find(b => b.id === trade.offering_item_id);
+            const wanting = brainrots.find(b => b.id === trade.wanting_item_id);
+            return offering?.rarity === filters.rarity || wanting?.rarity === filters.rarity;
+          });
+        }
+
+        setTrades(filteredTrades);
+      } catch (error: any) {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to fetch trades",
+          variant: "destructive",
         });
+      } finally {
+        setLoading(false);
       }
-      
-      setTrades(filteredTrades);
-      setLoading(false);
     };
 
     fetchTrades();
-  }, [filters, refreshTrigger]);
+  }, [filters, refreshTrigger, toast]);
 
   const handleDeleteTrade = async (tradeId: string) => {
     try {
-      // TODO: Implement Supabase delete
+      const { error } = await supabase
+        .from('trades')
+        .delete()
+        .eq('id', tradeId);
+
+      if (error) throw error;
+
       setTrades(prev => prev.filter(trade => trade.id !== tradeId));
       toast({
         title: "Trade deleted",
         description: "Your trade has been removed successfully.",
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to delete trade. Please try again.",
+        description: error.message || "Failed to delete trade. Please try again.",
         variant: "destructive",
       });
     }
@@ -100,20 +105,26 @@ export const TradeList = ({ filters, refreshTrigger, currentUserId }: TradeListP
 
   const handleToggleVisibility = async (tradeId: string, currentVisibility: boolean) => {
     try {
-      // TODO: Implement Supabase update
+      const { error } = await supabase
+        .from('trades')
+        .update({ is_visible: !currentVisibility })
+        .eq('id', tradeId);
+
+      if (error) throw error;
+
       setTrades(prev => prev.map(trade => 
         trade.id === tradeId 
-          ? { ...trade, isVisible: !currentVisibility }
+          ? { ...trade, is_visible: !currentVisibility }
           : trade
       ));
       toast({
         title: currentVisibility ? "Trade hidden" : "Trade made visible",
         description: `Your trade is now ${currentVisibility ? "hidden from" : "visible to"} other users.`,
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to update trade visibility. Please try again.",
+        description: error.message || "Failed to update trade visibility. Please try again.",
         variant: "destructive",
       });
     }
@@ -142,9 +153,10 @@ export const TradeList = ({ filters, refreshTrigger, currentUserId }: TradeListP
   return (
     <div className="space-y-4">
       {trades.map((trade) => {
-        const offering = getBrainrotById(trade.offeringId);
-        const wanting = getBrainrotById(trade.wantingId);
-        const isOwner = currentUserId === trade.userId;
+        const offering = getBrainrotById(trade.offering_item_id);
+        const wanting = getBrainrotById(trade.wanting_item_id);
+        const isOwner = currentUserId === trade.user_id;
+        const displayName = `User ${trade.user_id.slice(-8)}`;  // Show last 8 chars of user ID
 
         if (!offering || !wanting) return null;
 
@@ -154,10 +166,10 @@ export const TradeList = ({ filters, refreshTrigger, currentUserId }: TradeListP
               <div className="flex justify-between items-start">
                 <div>
                   <CardTitle className="text-lg">
-                    Trade by {trade.userEmail}
+                    Trade by {displayName}
                   </CardTitle>
                   <CardDescription>
-                    Created {new Date(trade.createdAt).toLocaleDateString()}
+                    Created {new Date(trade.created_at).toLocaleDateString()}
                   </CardDescription>
                 </div>
                 {isOwner && (
@@ -165,9 +177,9 @@ export const TradeList = ({ filters, refreshTrigger, currentUserId }: TradeListP
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleToggleVisibility(trade.id, trade.isVisible)}
+                      onClick={() => handleToggleVisibility(trade.id, trade.is_visible)}
                     >
-                      {trade.isVisible ? (
+                      {trade.is_visible ? (
                         <>
                           <EyeOff className="h-4 w-4 mr-1" />
                           Hide

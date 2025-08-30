@@ -1,33 +1,72 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { CreateTradeForm } from "@/components/trading/CreateTradeForm";
 import { TradeFilters } from "@/components/trading/TradeFilters";
 import { TradeList } from "@/components/trading/TradeList";
+import { supabase } from "@/integrations/supabase/client";
+import { User, Session } from '@supabase/supabase-js';
+import { useToast } from "@/hooks/use-toast";
+import { useNavigate } from "react-router-dom";
 
 const Index = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [isLogin, setIsLogin] = useState(true);
   const [filters, setFilters] = useState({});
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const { toast } = useToast();
+  const navigate = useNavigate();
 
-  // Mock user ID - replace with actual auth
-  const currentUserId = isAuthenticated ? "user1" : undefined;
+  useEffect(() => {
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        
+        if (!session?.user) {
+          navigate('/auth');
+        }
+      }
+    );
+
+    // Check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (!session?.user) {
+        navigate('/auth');
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const handleLogout = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast({
+        title: "Logged out successfully",
+        description: "See you next time!",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to logout",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleTradeCreated = () => {
     setRefreshTrigger(prev => prev + 1);
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <LoginForm 
-          onToggleMode={() => setIsLogin(!isLogin)}
-          isLogin={isLogin}
-        />
-      </div>
-    );
+  if (!user) {
+    return null; // Will redirect to /auth
   }
 
   return (
@@ -37,7 +76,7 @@ const Index = () => {
           <h1 className="text-2xl font-bold">Steal a Brainrot Trading</h1>
           <Button 
             variant="outline" 
-            onClick={() => setIsAuthenticated(false)}
+            onClick={handleLogout}
           >
             Logout
           </Button>
@@ -60,7 +99,7 @@ const Index = () => {
                 <TradeList 
                   filters={filters} 
                   refreshTrigger={refreshTrigger}
-                  currentUserId={currentUserId}
+                  currentUserId={user.id}
                 />
               </div>
             </div>

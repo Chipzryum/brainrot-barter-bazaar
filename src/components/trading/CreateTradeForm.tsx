@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { brainrots, Brainrot } from "@/lib/brainrots";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CreateTradeFormProps {
   onTradeCreated: () => void;
@@ -32,18 +33,35 @@ export const CreateTradeForm = ({ onTradeCreated }: CreateTradeFormProps) => {
 
     setLoading(true);
     try {
-      // TODO: Implement Supabase database insert
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+
+      const { error } = await supabase
+        .from('trades')
+        .insert({
+          user_id: user.id,
+          offering_item_id: offering,
+          wanting_item_id: wanting,
+          is_visible: isVisible
+        });
+
+      if (error) throw error;
+
       toast({
         title: "Trade created!",
         description: "Your trade has been successfully created.",
       });
       setOffering("");
       setWanting("");
+      setIsVisible(true);
       onTradeCreated();
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Error",
-        description: "Failed to create trade. Please try again.",
+        description: error.message || "Failed to create trade. Please try again.",
         variant: "destructive",
       });
     } finally {
